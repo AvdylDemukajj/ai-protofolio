@@ -1,0 +1,17 @@
+{
+    "dashboard": {
+      "title": "MLOps Churn Pipeline Metrics",
+      "panels": [
+        {
+          "title": "Model Accuracy Over Time",
+          "type": "graph",
+          "targets": [{"expr": "mlflow_model_accuracy"}]
+        },
+        {
+          "title": "Data Drift Status",
+          "type": "stat",
+          "targets": [{"expr": "data_drift_detected"}]
+        }
+      ]
+    }
+  }

@@ -1,2 +1,12 @@
 .env
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+venv/
+data/raw/*.csv
 models/*.pkl
+models/*.joblib
+*.log
+.idea/
+.vscode/
