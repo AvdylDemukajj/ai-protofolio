@@ -1,0 +1,3 @@
+/* Custom CSS can be injected via st.markdown in app.py */
+body { font-family: 'Inter', sans-serif; }
+.stExpander { border: 1px solid #e0e0e0; }
