@@ -1,2 +1,6 @@
 .env
 __pycache__/
+*.pyc
+models/*.pkl
+*.log
+.DS_Store
