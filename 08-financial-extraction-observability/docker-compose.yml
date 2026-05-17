@@ -1,8 +1,126 @@
 version: '3.9'
+
 services:
+  # API Gateway for uploading documents
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: financial-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - DB_URL=postgresql://fin_user:SecurePass123!@db:5432/fin_db
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadminpassword
+    depends_on:
+      - redis
+      - db
+      - minio
+    networks:
+      - fin-network
+
+  # Background Worker for processing
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: financial-worker
+    environment:
+      - REDIS_HOST=redis
+      - DB_URL=postgresql://fin_user:SecurePass123!@db:5432/fin_db
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadminpassword
+      - MAX_RETRIES=3
+    depends_on:
+      - redis
+      - db
+      - minio
+    networks:
+      - fin-network
+
+  # Message Broker & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: fin-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_/data
+    networks:
+      - fin-network
+
+  # Object Storage (S3 Compatible)
+  minio:
+    image: minio/minio:latest
+    container_name: fin-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadminpassword
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_/data
+    networks:
+      - fin-network
+
+  # Database
+  db:
+    image: postgres:15-alpine
+    container_name: fin-db
+    environment:
+      - POSTGRES_USER=fin_user
+      - POSTGRES_PASSWORD=SecurePass123!
+      - POSTGRES_DB=fin_db
+    volumes:
+      - postgres_/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - fin-network
+
+  # Monitoring: Prometheus
   prometheus:
     image: prom/prometheus:latest
-    ports: ["9090:9090"]
+    container_name: fin-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - fin-network
+
+  # Monitoring: Grafana
   grafana:
     image: grafana/grafana:latest
-    ports: ["3000:3000"]
+    container_name: fin-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_/var/lib/grafana
+      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
+    depends_on:
+      - prometheus
+    networks:
+      - fin-network
+
+volumes:
+  redis_data:
+  minio_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  fin-network:
+    driver: bridge

@@ -1,2 +1,11 @@
 .env
-data/
+__pycache__/
+*.py[cod]
+*$py.class
+.DS_Store
+venv/
+*.log
+uploads/
+minio_data/
+postgres_data/
+grafana_data/

@@ -1,1 +1,22 @@
-{"dashboard": {}}
+{
+    "dashboard": {
+      "title": "Financial Pipeline Overview",
+      "panels": [
+        {
+          "title": "Documents Processed",
+          "type": "graph",
+          "targets": [{"expr": "rate(doc_processing_total[5m])"}]
+        },
+        {
+          "title": "Queue Size",
+          "type": "gauge",
+          "targets": [{"expr": "queue_size"}]
+        },
+        {
+          "title": "Processing Latency",
+          "type": "heatmap",
+          "targets": [{"expr": "histogram_quantile(0.95, rate(doc_processing_seconds_bucket[5m]))"}]
+        }
+      ]
+    }
+  }
