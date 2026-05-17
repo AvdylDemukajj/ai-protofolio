@@ -1,3 +1,14 @@
-.env
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+
+# Reports
 reports/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

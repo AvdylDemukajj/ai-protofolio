@@ -1,5 +1,26 @@
 {
-  "hardcoded_creds": true,
-  "public_webhooks": true,
-  "missing_error_handling": true
+  "version": "1.0",
+  "rules": {
+    "hardcoded_credentials": {
+      "enabled": true,
+      "severity": "CRITICAL",
+      "patterns": ["password", "api_key", "secret", "token"],
+      "description": "Detects plain-text secrets in workflow parameters."
+    },
+    "public_webhooks": {
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Warns if webhooks are public without authentication headers."
+    },
+    "missing_error_handling": {
+      "enabled": true,
+      "severity": "MEDIUM",
+      "description": "Checks if critical nodes have error triggers connected."
+    },
+    "insecure_http": {
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Flags HTTP calls to non-HTTPS endpoints."
+    }
+  }
 }
