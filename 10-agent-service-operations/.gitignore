@@ -1,2 +1,7 @@
 .env
 __pycache__/
+*.py[cod]
+.DS_Store
+venv/
+*.log
+frontend/.streamlit/

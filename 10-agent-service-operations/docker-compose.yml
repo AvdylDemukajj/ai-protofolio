@@ -1,4 +1,69 @@
 version: '3.9'
+
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ops-agent-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://ops_user:SecurePass123!@db:5432/ops_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ALLOW_DESTRUCTIVE_ACTIONS=false
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - ops-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ops-agent-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    networks:
+      - ops-network
+
+  db:
+    image: postgres:15-alpine
+    container_name: ops-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=ops_user
+      - POSTGRES_PASSWORD=SecurePass123!
+      - POSTGRES_DB=ops_db
+    volumes:
+      - postgres_/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/seed_ops_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ops_user -d ops_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ops-network
+
+volumes:
+  postgres_data:
+
+networks:
+  ops-network:
+    driver: bridge
