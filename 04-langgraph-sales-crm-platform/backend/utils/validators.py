@@ -1,1 +1,8 @@
-def validate_email(): pass
+import re
+
+def is_valid_email(email: str) -> bool:
+    pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    return re.match(pattern, email) is not None
+
+def sanitize_input(text: str) -> str:
+    return text.strip().replace("<", "").replace(">", "")
