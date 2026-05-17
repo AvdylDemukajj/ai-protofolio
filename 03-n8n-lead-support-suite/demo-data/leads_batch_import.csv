@@ -1,2 +1,4 @@
-name,email,company
-John,john@test.com,TestCorp
+name,email,company,company_size,message
+Elon Musk,elon@tesla.com,Tesla,100000,Need AI for autopilot data processing.
+Bill Gates,bill@microsoft.com,Microsoft,200000,Partnership opportunity for AI ethics.
+Random User,random@gmail.com,None,0,Just saying hi.

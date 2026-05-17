@@ -1,1 +1,130 @@
-{"name": "Lead Intake", "nodes": []}
+{
+    "name": "01 Lead Intake & Validation",
+    "nodes": [
+      {
+        "parameters": {},
+        "id": "manual-start",
+        "name": "Manual Start",
+        "type": "n8n-nodes-base.manualTrigger",
+        "typeVersion": 1,
+        "position": [240, 300]
+      },
+      {
+        "parameters": {
+          "operation": "selectAll",
+          "table": "leads",
+          "where": "status = 'new'"
+        },
+        "id": "fetch-new-leads",
+        "name": "Fetch New Leads",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2,
+        "position": [440, 300],
+        "credentials": {
+          "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "string": [
+              {
+                "key": "email",
+                "operation": "regex",
+                "value": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+              }
+            ]
+          }
+        },
+        "id": "validate-email-format",
+        "name": "Validate Email Format",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [640, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "number": [
+              {
+                "key": "company_size",
+                "operation": "largerEqual",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "id": "check-company-size",
+        "name": "Check Company Size",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 1,
+        "position": [840, 300]
+      },
+      {
+        "parameters": {
+          "values": {
+            "string": [
+              { "name": "status", "value": "rejected" },
+              { "name": "review_reason", "value": "Invalid Email or Too Small Company" }
+            ]
+          }
+        },
+        "id": "mark-rejected",
+        "name": "Mark Rejected",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [1040, 180]
+      },
+      {
+        "parameters": {
+          "values": {
+            "string": [
+              { "name": "status", "value": "validated" }
+            ]
+          }
+        },
+        "id": "mark-validated",
+        "name": "Mark Validated",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3,
+        "position": [1040, 420]
+      },
+      {
+        "parameters": {
+          "operation": "update",
+          "table": "leads",
+          "columns": "status, review_reason",
+          "columnValues": "={{ $json.status }}, {{ $json.review_reason }}",
+          "where": "id = '{{ $json.id }}'"
+        },
+        "id": "update-lead-status",
+        "name": "Update Lead Status",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2,
+        "position": [1240, 300],
+        "credentials": {
+          "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+        }
+      }
+    ],
+    "connections": {
+      "Manual Start": { "main": [[{ "node": "Fetch New Leads", "type": "main", "index": 0 }]] },
+      "Fetch New Leads": { "main": [[{ "node": "Validate Email Format", "type": "main", "index": 0 }]] },
+      "Validate Email Format": {
+        "main": [
+          [{ "node": "Check Company Size", "type": "main", "index": 0 }],
+          [{ "node": "Mark Rejected", "type": "main", "index": 0 }]
+        ]
+      },
+      "Check Company Size": {
+        "main": [
+          [{ "node": "Mark Validated", "type": "main", "index": 0 }],
+          [{ "node": "Mark Rejected", "type": "main", "index": 0 }]
+        ]
+      },
+      "Mark Rejected": { "main": [[{ "node": "Update Lead Status", "type": "main", "index": 0 }]] },
+      "Mark Validated": { "main": [[{ "node": "Update Lead Status", "type": "main", "index": 0 }]] }
+    },
+    "settings": { "executionOrder": "v1" },
+    "versionId": "ent-v1"
+  }
