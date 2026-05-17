@@ -1,1 +1,0 @@
-print('Seeding knowledge...')

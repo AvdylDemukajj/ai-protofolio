@@ -1,4 +1,54 @@
 version: '3.9'
+
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multi-agent-router-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://agent_user:SecurePass123!@db:5432/agent_db
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - agent-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: multi-agent-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=agent_user
+      - POSTGRES_PASSWORD=SecurePass123!
+      - POSTGRES_DB=agent_db
+    volumes:
+      - postgres_/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/seed_knowledge.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_user -d agent_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - agent-network
+
+volumes:
+  postgres_data: {}
+
+networks:
+  agent-network:
+    driver: bridge
