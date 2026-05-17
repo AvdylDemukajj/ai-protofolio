@@ -1,0 +1,66 @@
+version: '3.9'
+
+services:
+  master-db:
+    image: postgres:15-alpine
+    container_name: saas-master-db
+    environment:
+      POSTGRES_USER: saas_admin
+      POSTGRES_PASSWORD: SecureRootPass123!
+      POSTGRES_DB: master_db
+    volumes:
+      - pg_/var/lib/postgresql/data
+      - ./infrastructure/init_master.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - saas-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saas_admin -d master_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: saas-redis
+    networks:
+      - saas-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: saas-api
+    ports:
+      - "8000:8000"
+    environment:
+      MASTER_DB_URL: postgresql://saas_admin:SecureRootPass123!@master-db:5432/master_db
+      REDIS_HOST: redis
+      JWT_SECRET: change_this_in_production_to_a_secure_random_string
+    depends_on:
+      master-db:
+        condition: service_healthy
+    networks:
+      - saas-net
+    restart: unless-stopped
+
+  billing-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.billing
+    environment:
+      MASTER_DB_URL: postgresql://saas_admin:SecureRootPass123!@master-db:5432/master_db
+    depends_on:
+      - master-db
+    networks:
+      - saas-net
+    # Run once for demo purposes, in prod would be a cron
+    command: python -m billing_engine.invoice_generator
+
+volumes:
+  pg_data: {}
+
+networks:
+  saas-net:
+    driver: bridge

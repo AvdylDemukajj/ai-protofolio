@@ -1,0 +1,1 @@
+def check_auth(): pass

@@ -1,0 +1,23 @@
+# Environment Variables
+.env
+.env.local
+.env.production
+
+# n8n specific data (contains encrypted credentials)
+n8n_data/
+
+# Database volumes
+postgres_data/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

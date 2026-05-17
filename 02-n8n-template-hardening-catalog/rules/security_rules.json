@@ -1,0 +1,5 @@
+{
+  "hardcoded_creds": true,
+  "public_webhooks": true,
+  "missing_error_handling": true
+}

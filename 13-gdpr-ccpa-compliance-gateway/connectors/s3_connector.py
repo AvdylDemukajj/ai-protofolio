@@ -1,0 +1,1 @@
+def delete_s3(): pass

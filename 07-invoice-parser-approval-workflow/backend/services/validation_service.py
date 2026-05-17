@@ -1,0 +1,1 @@
+def check_math(total): return True

@@ -1,0 +1,1 @@
+CREATE TABLE leads (id UUID, status TEXT);

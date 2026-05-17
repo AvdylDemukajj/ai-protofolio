@@ -1,0 +1,5 @@
+confluent-kafka
+scikit-learn
+numpy
+structlog
+fastapi

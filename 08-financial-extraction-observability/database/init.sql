@@ -1,0 +1,1 @@
+CREATE TABLE documents (id UUID);

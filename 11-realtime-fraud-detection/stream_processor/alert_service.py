@@ -1,0 +1,1 @@
+def alert(): pass

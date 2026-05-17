@@ -1,0 +1,6 @@
+customer_email,subject,body,expected_category
+user1@example.com,Refund request,I paid twice for invoice #123,refund
+user2@example.com,Login issue,Cannot access my account,technical_issue
+user3@example.com,Pricing inquiry,Cost for 50 users?,sales
+user4@example.com,Bug report,App crashes on startup,technical_issue
+user5@example.com,Cancel subscription,Want to cancel immediately,billing

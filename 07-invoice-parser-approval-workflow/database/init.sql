@@ -1,0 +1,1 @@
+CREATE TABLE invoices (id UUID, status TEXT);

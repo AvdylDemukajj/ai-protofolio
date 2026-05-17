@@ -1,0 +1,2 @@
+# Logic
+Intake -> Validate -> Score.

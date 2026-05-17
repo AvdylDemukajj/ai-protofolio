@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+langgraph
+langchain
+streamlit
+psycopg2-binary

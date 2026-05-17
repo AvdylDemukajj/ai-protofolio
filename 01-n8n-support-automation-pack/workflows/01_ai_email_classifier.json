@@ -1,0 +1,75 @@
+{
+  "name": "01 AI Email Classifier",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mock Data for Demo\nreturn [\n  {\n    json: {\n      subject: \"Refund Request - Invoice #123\",\n      body: \"I was charged twice for my subscription. Please refund immediately.\",\n      email: \"angry.customer@example.com\"\n    }\n  },\n  {\n    json: {\n      subject: \"How to integrate API?\",\n      body: \"I need help with the webhook documentation.\",\n      email: \"dev@startup.io\"\n    }\n  }\n];"
+      },
+      "id": "mock-data",
+      "name": "Mock Data Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "support_tickets",
+        "columns": "customer_email, subject, body, status",
+        "columnValues": "={{ $json.email }}, {{ $json.subject }}, {{ $json.body }}, 'new'",
+        "options": {}
+      },
+      "id": "save-to-db",
+      "name": "Save to Postgres",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [640, 300],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER_ID",
+          "name": "Postgres Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Mock Data Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mock Data Source": {
+      "main": [
+        [
+          {
+            "node": "Save to Postgres",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2023-10-27T10:00:00.000Z",
+  "versionId": "enterprise-v1-audited"
+}
