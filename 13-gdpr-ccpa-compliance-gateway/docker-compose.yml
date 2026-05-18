@@ -1,5 +1,56 @@
 version: '3.9'
+
 services:
   api:
-    build: .
-    ports: ["8000:8000"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gdpr-gateway-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - DATABASE_URL=postgresql://gdpr_user:SecurePass123!@db:5432/gdpr_db
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-dummy}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-dummy}
+      - AWS_REGION=us-east-1
+      - S3_BUCKET_NAME=user-data-backup
+      - ANALYTICS_API_KEY=${ANALYTICS_API_KEY:-dummy}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - gdpr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    container_name: gdpr-audit-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=gdpr_user
+      - POSTGRES_PASSWORD=SecurePass123!
+      - POSTGRES_DB=gdpr_db
+    volumes:
+      - postgres_/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gdpr_user -d gdpr_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gdpr-network
+
+volumes:
+  postgres_data: {}
+
+networks:
+  gdpr-network:
+    driver: bridge
