@@ -1,61 +1,68 @@
-version: '3.9'
+version: '3.8'
 
 services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: backend/Dockerfile
     container_name: sales-agent-api
     restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://sales_user:SecurePass123!@db:5432/sales_db
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-sk-dummy-key-for-demo}
-      - ENVIRONMENT=development
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-sales_user}:${DB_PASSWORD}@db:5432/${POSTGRES_DB:-sales_db}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - API_KEY=${API_KEY}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8502}
     depends_on:
       db:
         condition: service_healthy
     networks:
       - sales-network
-    command: uvicorn backend.main:app --host 0.0.0.0 --reload
 
   db:
     image: postgres:15-alpine
     container_name: sales-crm-db
     restart: unless-stopped
     environment:
-      - POSTGRES_USER=sales_user
-      - POSTGRES_PASSWORD=SecurePass123!
-      - POSTGRES_DB=sales_db
+      - POSTGRES_USER=${POSTGRES_USER:-sales_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-sales_db}
     volumes:
-      - postgres_/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/seed_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sales_user -d sales_db"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
+    ports:
+      - "5435:5432"
     networks:
       - sales-network
 
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: frontend/Dockerfile
     container_name: sales-dashboard
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8502:8501"
     environment:
-      - BACKEND_URL=http://api:8000
+      - API_URL=http://api:8000
+      - API_KEY=${API_KEY}
     depends_on:
       - api
     networks:
       - sales-network
 
 volumes:
-  postgres_data: {}
+  postgres_data:
 
 networks:
   sales-network:

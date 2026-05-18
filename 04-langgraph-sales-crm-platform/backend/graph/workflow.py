@@ -1,19 +1,26 @@
-from langgraph.graph import StateGraph, END
-from backend.graph.state import AgentState
-from backend.graph.nodes import research_node, strategy_node, draft_node
+"""LangGraph workflow definition: research → strategy → draft/reject."""
 
-def route_logic(state: AgentState) -> str:
+from langgraph.graph import END, StateGraph
+
+from backend.graph.nodes import draft_node, research_node, strategy_node
+from backend.graph.state import AgentState
+
+
+def route_after_strategy(state: AgentState) -> str:
     decision = state.get("decision")
     if not decision:
         return "error"
-    
-    if decision.action == "research":
+    action = decision.action
+    if action == "research":
+        if state.get("research_iterations", 0) >= 2:
+            return "reject"
         return "research"
-    elif decision.action == "draft_email":
+    if action == "draft_email":
         return "draft"
-    elif decision.action == "reject":
-        return "end"
-    return "end"
+    if action == "reject":
+        return "reject"
+    return "reject"
+
 
 workflow = StateGraph(AgentState)
 
@@ -21,20 +28,18 @@ workflow.add_node("research", research_node)
 workflow.add_node("strategy", strategy_node)
 workflow.add_node("draft", draft_node)
 
-workflow.set_entry_point("strategy")
-
+workflow.set_entry_point("research")
+workflow.add_edge("research", "strategy")
 workflow.add_conditional_edges(
-    source="strategy",
-    cond=route_logic,
-    mapping={
+    "strategy",
+    route_after_strategy,
+    {
         "research": "research",
         "draft": "draft",
-        "end": END,
-        "error": END
-    }
+        "reject": END,
+        "error": END,
+    },
 )
-
-workflow.add_edge("research", "strategy")
 workflow.add_edge("draft", END)
 
-app = workflow.compile()
+agent_graph = workflow.compile()

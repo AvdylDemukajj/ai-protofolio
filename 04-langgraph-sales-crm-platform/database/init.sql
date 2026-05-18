@@ -1,6 +1,7 @@
+-- LangGraph Sales CRM schema
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Leads Table
 CREATE TABLE IF NOT EXISTS leads (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     company_name VARCHAR(255) NOT NULL,
@@ -8,39 +9,40 @@ CREATE TABLE IF NOT EXISTS leads (
     contact_email VARCHAR(255),
     industry VARCHAR(100),
     employee_count INTEGER,
-    
-    -- AI Enrichment
     pain_points TEXT[],
-    lead_score INTEGER CHECK (lead_score BETWEEN 0 AND 100),
-    buying_intent VARCHAR(50), -- 'cold', 'warm', 'hot'
+    lead_score INTEGER CHECK (lead_score IS NULL OR lead_score BETWEEN 0 AND 100),
+    buying_intent VARCHAR(50),
     outreach_strategy TEXT,
-    
-    -- Workflow State
-    status VARCHAR(50) DEFAULT 'new', -- new, researching, drafted, pending_review, sent
+    status VARCHAR(50) DEFAULT 'new',
+    draft_subject TEXT,
+    draft_body TEXT,
+    requires_human_review BOOLEAN DEFAULT TRUE,
+    agent_decision VARCHAR(100),
+    confidence_score NUMERIC(3, 2),
     last_interaction_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Interactions Log
 CREATE TABLE IF NOT EXISTS interactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    lead_id UUID REFERENCES leads(id) ON DELETE CASCADE,
-    interaction_type VARCHAR(50) NOT NULL, -- 'email_draft', 'call_note', 'meeting'
+    lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    interaction_type VARCHAR(50) NOT NULL,
     content TEXT NOT NULL,
     ai_generated BOOLEAN DEFAULT TRUE,
     human_approved BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Agent Audit Log
 CREATE TABLE IF NOT EXISTS agent_audit_log (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    lead_id UUID REFERENCES leads(id),
+    lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
     action_taken VARCHAR(100) NOT NULL,
     reasoning TEXT,
     confidence_score NUMERIC(3, 2),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_leads_status ON leads(status);
-CREATE INDEX idx_leads_score ON leads(lead_score DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_score ON leads(lead_score DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_interactions_lead ON interactions(lead_id);
+CREATE INDEX IF NOT EXISTS idx_audit_lead ON agent_audit_log(lead_id);

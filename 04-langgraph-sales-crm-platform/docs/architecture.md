@@ -1,14 +1,49 @@
-# Architecture Details
+# Architecture
 
-## State Machine
-The agent follows a cyclic graph:
-1. **Entry**: Receive Lead Info.
-2. **Strategy Node**: Analyze score.
-   - If Score < 40 -> Reject.
-   - If Score 40-70 -> Research More.
-   - If Score > 70 -> Draft Email.
-3. **Draft Node**: Generate content using LLM.
-4. **Exit**: Return state to API for user review.
+## State machine (LangGraph)
 
-## Data Flow
-User Input -> API -> LangGraph Invoker -> DB (Log) -> Streamlit (Review) -> Send.
+```text
+[research] → [strategy] ──score≥70──► [draft] → END
+                │
+                ├──score 40-69──► [research] (max 2 iterations)
+                └──score<40────► END (reject)
+```
+
+### Nodes
+
+| Node | Responsibility |
+|------|----------------|
+| `research` | Company analysis, pain points, lead score, intent |
+| `strategy` | Route to draft, more research, or reject |
+| `draft` | Generate email subject/body for human review |
+
+### State (`AgentState`)
+
+- `company_info`, `analysis`, `draft`, `decision`, `messages`, `research_iterations`
+
+## Application layers
+
+```text
+Streamlit UI ──HTTP──► FastAPI ──invoke──► LangGraph
+                          │
+                          ▼
+                     PostgreSQL
+                    (leads, audit, interactions)
+```
+
+## Data flow
+
+1. `POST /leads/` creates DB row (`status=processing`)
+2. Agent runs synchronously (typical run 5–30s with OpenAI)
+3. Results persisted; draft stored in `interactions`
+4. Slack notify if high-score pending review
+5. Human approves via UI or `POST /leads/{id}/approve`
+
+## Mock vs live LLM
+
+`settings.use_mock_llm` is true when:
+
+- `ENVIRONMENT=test`, or
+- No API key / dummy key prefix
+
+Ensures portfolio demos work offline while production uses OpenAI structured JSON prompts.

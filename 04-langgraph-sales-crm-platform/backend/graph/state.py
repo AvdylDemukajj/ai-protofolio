@@ -1,11 +1,16 @@
-from typing import TypedDict, Optional, List
-from backend.models import LeadAnalysis, OutreachDraft, AgentDecision
+"""LangGraph agent state definition."""
 
-class AgentState(TypedDict):
+from typing import Optional, TypedDict
+
+from backend.models import AgentDecision, LeadAnalysis, OutreachDraft
+
+
+class AgentState(TypedDict, total=False):
     lead_id: str
     company_info: dict
     analysis: Optional[LeadAnalysis]
     draft: Optional[OutreachDraft]
     decision: Optional[AgentDecision]
-    messages: List[str]
+    messages: list[str]
     error: Optional[str]
+    research_iterations: int
