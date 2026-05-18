@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from backend.graph import app as agent_graph
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from backend.database import SessionLocal, get_db
 from backend.models import AuditLog
 import json

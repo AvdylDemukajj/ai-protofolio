@@ -1,17 +1,47 @@
 # Project 13: GDPR/CCPA Compliance Gateway
 
-## 🚀 Overview
-Një gateway qendror për menaxhimin e kërkesave të privatësisë (Right to be Forgotten). Zbaton **Saga Pattern** për të garantuar fshirjen e të dhënave në mënyrë të konsistente nëpër sisteme të shumta (DB, S3, Analytics) me mekanizma automatikë **Rollback**.
+## Overview
 
-## 🏗️ Arkitektura
-- **Saga Orchestrator**: Koordinon hapat e fshirjes.
-- **Connectors**: Adapterë për PostgreSQL, AWS S3, dhe API të jashtëm.
-- **Audit Logger**: Regjistron çdo veprim për compliance (SOC2/GDPR).
-- **Anonymizer**: Pseudonimizim i të dhënave për të ruajtur integritetin referencial.
+Central privacy gateway implementing **Right to be Forgotten** via the **Saga pattern**: coordinated deletion across PostgreSQL, S3, and analytics with compensating transactions on failure.
 
-## 🛠️ Si ta Ekzekutoni
+## Architecture
 
-1. **Konfigurimi:**
-   ```bash
-   cp .env.example .env
-   # Vendosni kredencialet AWS dhe DB
+- **SagaOrchestrator** — synchronous step execution (no `await` on blocking I/O)
+- **Connectors** — PostgreSQL anonymization, S3 object deletion, analytics API
+- **AuditLogger** — UUID primary keys for compliance records
+- **Postgres schema** — `users`, `sessions`, and `deletion_audit_logs` in `database/init.sql`
+
+## Ports (Docker)
+
+| Service | Host port |
+|---------|-----------|
+| API | 8013 |
+| PostgreSQL | 5436 |
+
+## Quick start
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+curl http://localhost:8013/health
+```
+
+### Delete user (demo)
+
+```bash
+curl -X POST http://localhost:8013/privacy/delete-user \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user-42", "reason": "user_request"}'
+```
+
+## Tests
+
+```bash
+pip install -r requirements.txt
+pytest tests/ -v
+```
+
+## API
+
+- `GET /health`
+- `POST /privacy/delete-user` — body: `{ "user_id": "...", "reason": "user_request" }`

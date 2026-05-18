@@ -8,7 +8,7 @@ services:
     container_name: ops-agent-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8009:8000"
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
@@ -33,7 +33,7 @@ services:
     container_name: ops-agent-dashboard
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8510:8501"
     environment:
       - API_URL=http://api:8000
     depends_on:
@@ -49,8 +49,10 @@ services:
       - POSTGRES_USER=ops_user
       - POSTGRES_PASSWORD=SecurePass123!
       - POSTGRES_DB=ops_db
+    ports:
+      - "5439:5432"
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./database/seed_ops_data.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:

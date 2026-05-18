@@ -1,24 +1,23 @@
+"""Answer validation (grounding and safety)."""
+
+
 class ValidationService:
     @staticmethod
-    def check_grounding(answer: str, context: list) -> bool:
-        """Checks if the answer contains key terms from the context."""
+    def check_grounding(answer: str, context: list[str]) -> bool:
         if not context or not answer:
             return False
-        
-        # Simple heuristic: Check if significant words from context appear in answer
-        context_words = set(" ".join(context).lower().split())
+        context_words = {w for w in " ".join(context).lower().split() if len(w) > 3}
         answer_words = set(answer.lower().split())
-        
-        intersection = context_words.intersection(answer_words)
-        # If less than 20% overlap, it might be hallucinated
-        overlap_ratio = len(intersection) / len(context_words) if context_words else 0
-        
-        return overlap_ratio > 0.2
+        if not context_words:
+            return True
+        overlap = len(context_words.intersection(answer_words)) / len(context_words)
+        return overlap > 0.15
 
     @staticmethod
     def check_safety(answer: str) -> bool:
-        """Basic safety check for PII or harmful content."""
-        forbidden_terms = ["password", "credit card", "ssn", "private key"]
-        return not any(term in answer.lower() for term in forbidden_terms)
+        forbidden = ["password", "credit card", "ssn", "private key", "social security"]
+        lowered = answer.lower()
+        return not any(term in lowered for term in forbidden)
+
 
 validation_service = ValidationService()

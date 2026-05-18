@@ -1,15 +1,20 @@
-# Tenant Architecture Details
+# Tenant Architecture
 
-## Strategy: Schema-per-Tenant
-We chose Schema isolation over Column isolation (`tenant_id` column) for the following reasons:
-1. **Security**: Physical separation reduces risk of data leakage.
-2. **Compliance**: Easier to export/delete data for GDPR per tenant.
-3. **Performance**: Smaller indexes per schema.
-4. **Customization**: Allows enterprise clients to have custom table structures if needed.
+## Schema-per-tenant
 
-## Connection Flow
-1. Request arrives with `Host: clientA.api.com`.
-2. `TenantResolver` extracts `clientA`.
-3. Checks Redis Cache. If miss, queries Master DB `tenants` table.
-4. Establishes DB connection and executes `SET search_path TO tenant_clientA`.
-5. All subsequent SQL queries in that request context automatically target the correct schema.
+Each customer receives a dedicated PostgreSQL schema named `tenant_<8-char-hex>` (derived from the tenant UUID). The master `tenants` table stores subdomain, plan, and schema mapping.
+
+## Request routing
+
+1. API receives request with `Host: {subdomain}.example.com` or header `X-Tenant-Subdomain`.
+2. `get_tenant_config()` loads metadata from Redis cache or master DB.
+3. Connection sets `search_path` using `psycopg2.sql.Identifier` (safe quoting).
+4. Queries run only against that tenant's tables (`users`, `data`).
+
+## Isolation guarantee
+
+A bug in application SQL cannot read another tenant's rows while `search_path` is set correctly per request. Cross-tenant access requires an explicit connection to the master catalog.
+
+## Onboarding
+
+`onboarding/provision_tenant.py` inserts a master row and calls `create_tenant_schema()` in PostgreSQL to create schema + standard tables atomically.

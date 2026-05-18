@@ -8,7 +8,7 @@ services:
     container_name: gdpr-gateway-api
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8013:8000"
     environment:
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
@@ -37,8 +37,10 @@ services:
       - POSTGRES_USER=gdpr_user
       - POSTGRES_PASSWORD=SecurePass123!
       - POSTGRES_DB=gdpr_db
+    ports:
+      - "5436:5432"
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gdpr_user -d gdpr_db"]
@@ -49,7 +51,7 @@ services:
       - gdpr-network
 
 volumes:
-  postgres_data: {}
+  postgres_data:
 
 networks:
   gdpr-network:

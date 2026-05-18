@@ -5,22 +5,24 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: invoice-backend
+    container_name: local-invoice-backend
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8008:8000"
     environment:
       - DATABASE_URL=postgresql://invoice_user:SecurePass123!@db:5432/invoice_db
       - OLLAMA_HOST=http://ollama:11434
       - USE_LOCAL_LLM=true
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
+      - UPLOAD_DIR=/app/uploads
     depends_on:
       db:
         condition: service_healthy
-      # ollama: condition: service_started (Optional if using local LLM)
+      ollama:
+        condition: service_started
     volumes:
-      - uploaded_files:/app/uploads
+      - ./uploads:/app/uploads
     networks:
       - invoice-network
 
@@ -28,10 +30,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: invoice-dashboard
+    container_name: local-invoice-dashboard
     restart: unless-stopped
     ports:
-      - "8501:8501"
+      - "8504:8501"
     environment:
       - BACKEND_URL=http://backend:8000
     depends_on:
@@ -41,14 +43,16 @@ services:
 
   db:
     image: postgres:15-alpine
-    container_name: invoice-db
+    container_name: local-invoice-db
     restart: unless-stopped
+    ports:
+      - "5438:5432"
     environment:
       - POSTGRES_USER=invoice_user
       - POSTGRES_PASSWORD=SecurePass123!
       - POSTGRES_DB=invoice_db
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U invoice_user -d invoice_db"]
@@ -58,29 +62,19 @@ services:
     networks:
       - invoice-network
 
-  # Optional: Local LLM Service (Requires GPU or significant RAM)
-  # Comment out if using cloud LLM fallback
   ollama:
     image: ollama/ollama:latest
-    container_name: invoice-ollama
+    container_name: local-invoice-ollama
     restart: unless-stopped
     volumes:
-      - ollama_/root/.ollama
+      - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
     networks:
       - invoice-network
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
 
 volumes:
   postgres_data:
-  uploaded_files:
   ollama_data:
 
 networks:

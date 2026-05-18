@@ -35,7 +35,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis_/data
+      - redis_data:/data
     networks:
       - fraud-network
 
@@ -47,14 +47,13 @@ services:
       POSTGRES_PASSWORD: SecurePass123!
       POSTGRES_DB: fraud_db
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - fraud-network
 
-  # Generates fake traffic for demo
   generator:
     build:
       context: .
@@ -67,7 +66,6 @@ services:
     networks:
       - fraud-network
 
-  # Core Fraud Detection Engine
   processor:
     build:
       context: .
@@ -82,17 +80,18 @@ services:
       REDIS_HOST: redis
       DB_URL: postgresql://fraud_user:SecurePass123!@db:5432/fraud_db
       MODEL_PATH: /app/models/fraud_model.pkl
+    volumes:
+      - ./models:/app/models
     networks:
       - fraud-network
 
-  # API for manual review and dashboard
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     container_name: fraud-api
     ports:
-      - "8000:8000"
+      - "8011:8000"
     depends_on:
       - db
       - redis

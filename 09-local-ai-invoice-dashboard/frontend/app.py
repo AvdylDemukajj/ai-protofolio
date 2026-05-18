@@ -4,7 +4,7 @@ import pandas as pd
 import plotly.express as px
 import os
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8008")
 
 st.set_page_config(page_title="InvoiceOps AI", layout="wide", page_icon="🧾")
 

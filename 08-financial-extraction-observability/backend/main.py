@@ -1,9 +1,9 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Response
 from sqlalchemy.orm import Session
-from backend.database import get_db, SessionLocal
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from backend.database import get_db
 from backend.models import Document, DocumentStatus
 from backend.services.storage_service import storage_service
-from backend.utils.retry_handler import RetryHandler
 import redis
 import json
 import uuid
@@ -18,9 +18,8 @@ def health_check():
     return {"status": "healthy", "service": "financial-pipeline"}
 
 @app.get("/metrics")
-def get_metrics():
-    # In prod, Prometheus scrapes this endpoint directly
-    return {"message": "Metrics available at /metrics endpoint scraped by Prometheus"}
+def prometheus_metrics():
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.post("/upload", response_model=dict)
 async def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db)):

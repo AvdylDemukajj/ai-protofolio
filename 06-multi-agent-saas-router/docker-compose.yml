@@ -14,7 +14,6 @@ services:
       - LOG_LEVEL=INFO
       - DATABASE_URL=postgresql://agent_user:SecurePass123!@db:5432/agent_db
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - REDIS_HOST=redis
     depends_on:
       db:
         condition: service_healthy
@@ -35,7 +34,7 @@ services:
       - POSTGRES_PASSWORD=SecurePass123!
       - POSTGRES_DB=agent_db
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./database/seed_knowledge.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:

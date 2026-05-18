@@ -1,14 +1,14 @@
 version: '3.9'
 
 services:
-  # API Gateway for uploading documents
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
     container_name: financial-api
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8007:8000"
     environment:
       - REDIS_HOST=redis
       - DB_URL=postgresql://fin_user:SecurePass123!@db:5432/fin_db
@@ -22,12 +22,12 @@ services:
     networks:
       - fin-network
 
-  # Background Worker for processing
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
     container_name: financial-worker
+    restart: unless-stopped
     environment:
       - REDIS_HOST=redis
       - DB_URL=postgresql://fin_user:SecurePass123!@db:5432/fin_db
@@ -42,17 +42,15 @@ services:
     networks:
       - fin-network
 
-  # Message Broker & Queue
   redis:
     image: redis:7-alpine
     container_name: fin-redis
     command: redis-server --appendonly yes
     volumes:
-      - redis_/data
+      - redis_data:/data
     networks:
       - fin-network
 
-  # Object Storage (S3 Compatible)
   minio:
     image: minio/minio:latest
     container_name: fin-minio
@@ -64,25 +62,24 @@ services:
       - MINIO_ROOT_PASSWORD=minioadminpassword
     command: server /data --console-address ":9001"
     volumes:
-      - minio_/data
+      - minio_data:/data
     networks:
       - fin-network
 
-  # Database
   db:
     image: postgres:15-alpine
     container_name: fin-db
+    restart: unless-stopped
     environment:
       - POSTGRES_USER=fin_user
       - POSTGRES_PASSWORD=SecurePass123!
       - POSTGRES_DB=fin_db
     volumes:
-      - postgres_/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - fin-network
 
-  # Monitoring: Prometheus
   prometheus:
     image: prom/prometheus:latest
     container_name: fin-prometheus
@@ -90,14 +87,13 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_/prometheus
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
     networks:
       - fin-network
 
-  # Monitoring: Grafana
   grafana:
     image: grafana/grafana:latest
     container_name: fin-grafana
@@ -107,7 +103,7 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - grafana_/var/lib/grafana
+      - grafana_data:/var/lib/grafana
       - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
     depends_on:
       - prometheus

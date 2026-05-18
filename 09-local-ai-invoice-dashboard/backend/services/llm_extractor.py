@@ -32,7 +32,11 @@ class LLMExtractor:
                     result_text = response.json()['response']
             else:
                 # Fallback to OpenAI logic here
-                result_text = '{"vendor_name": "Unknown", "invoice_number": "ERROR", "invoice_date": "2023-01-01", "total": 0.0, "currency": "USD", "confidence": 0.1}'
+                result_text = (
+                    '{"vendor_name": "Unknown", "invoice_number": "ERROR", '
+                    '"invoice_date": "2023-01-01", "subtotal": 0.0, "tax": 0.0, '
+                    '"total": 0.0, "currency": "USD", "confidence": 0.1}'
+                )
 
             data = json.loads(result_text)
             return data
@@ -44,9 +48,11 @@ class LLMExtractor:
                 "vendor_name": "Extraction Failed",
                 "invoice_number": "ERROR",
                 "invoice_date": "2023-01-01",
+                "subtotal": 0.0,
+                "tax": 0.0,
                 "total": 0.0,
                 "currency": "USD",
-                "confidence": 0.1
+                "confidence": 0.1,
             }
 
 llm_extractor = LLMExtractor()

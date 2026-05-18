@@ -50,14 +50,14 @@ workflow.add_node("human_escalation", human_escalation)
 workflow.set_entry_point("route")
 
 workflow.add_conditional_edges(
-    source="route",
-    cond=should_route,
-    mapping={
+    "route",
+    should_route,
+    {
         "billing": "billing",
         "technical": "technical",
         "refunds": "refunds",
-        "human_escalation": "human_escalation"
-    }
+        "human_escalation": "human_escalation",
+    },
 )
 
 workflow.add_edge("billing", END)

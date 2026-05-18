@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List
-from backend.database import get_db, SessionLocal
+from backend.database import get_db
 from backend.models import Invoice, ReviewLog
 from backend.services.ocr_engine import ocr_engine
 from backend.services.llm_extractor import llm_extractor
@@ -32,7 +32,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
         
         # 4. Validate
         is_math_valid = validation_service.validate_math(extracted_data)
-        status = validation_service.check_confidence(extracted_data)
+        status = validation_service.determine_status(extracted_data, is_math_valid)
         
         # 5. Save to DB
         new_invoice = Invoice(

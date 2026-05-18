@@ -1,31 +1,19 @@
-import sys
-sys.path.append('.')
+"""Manual check for grounding validation on sample Q&A."""
 
-from backend.services.rag_engine import RAGEngine
-from backend.services.validation_service import ValidationService
+from backend.rag_engine import rag_engine
+from backend.validators import validation_service
 
-def test_rag_flow():
-    print("🧪 Testing RAG Flow...")
-    
-    engine = RAGEngine()
-    validator = ValidationService()
-    
-    # Mock context for testing without DB
-    mock_context = ["We ship within 24 hours.", "Returns accepted in 14 days."]
-    
-    query = "How fast do you ship?"
-    answer = engine.generate_answer(query, mock_context)
-    
-    print(f"Query: {query}")
-    print(f"Answer: {answer}")
-    
-    is_grounded = validator.check_grounding(answer, mock_context)
-    print(f"Grounded: {is_grounded}")
-    
-    if is_grounded:
-        print("✅ Test Passed: Answer is grounded in context.")
-    else:
-        print("❌ Test Failed: Answer might be hallucinated.")
+
+def main() -> None:
+    question = "How long do I have to return a product?"
+    context = rag_engine.retrieve_context(question)
+    answer = rag_engine.generate_answer(question, context)
+    grounded = validation_service.check_grounding(answer, context)
+    safe = validation_service.check_safety(answer)
+    print(f"Question: {question}")
+    print(f"Answer: {answer[:200]}...")
+    print(f"Grounded: {grounded} | Safe: {safe}")
+
 
 if __name__ == "__main__":
-    test_rag_flow()
+    main()

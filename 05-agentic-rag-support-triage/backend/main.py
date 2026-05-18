@@ -1,17 +1,36 @@
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-from typing import List, Optional
-from backend.services.rag_engine import rag_engine
-from backend.services.validation_service import validation_service
-from backend.utils.logger import logger
-from backend.database import get_db, SessionLocal
-from backend.models import InteractionLog
-import time
+"""FastAPI service for agentic RAG support triage."""
 
-app = FastAPI(title="Agentic RAG Support Triage", version="1.0.0")
+from __future__ import annotations
+
+import time
+from typing import List, Optional
+
+import structlog
+from fastapi import Depends, FastAPI, Header, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
+from backend.config import settings
+from backend.database import check_db, get_db
+from backend.logger import logger
+from backend.models import InteractionLog
+from backend.rag_engine import rag_engine
+from backend.validators import validation_service
+
+structlog.configure(
+    processors=[
+        structlog.processors.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.dev.ConsoleRenderer(),
+    ]
+)
+
+app = FastAPI(title="Agentic RAG Support Triage", version="2.0.0")
+
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(..., min_length=3, max_length=2000)
+
 
 class QueryResponse(BaseModel):
     answer: str
@@ -19,56 +38,76 @@ class QueryResponse(BaseModel):
     verified: bool
     confidence_score: int
 
+
+def verify_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
+    if settings.API_KEY and x_api_key != settings.API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+
+@app.on_event("startup")
+def startup_index():
+    from backend.database import SessionLocal
+    from backend.models import KnowledgeDocument
+
+    db = SessionLocal()
+    try:
+        count = db.query(KnowledgeDocument).count()
+        if count == 0:
+            indexed = rag_engine.index_markdown_folder()
+            logger.info("knowledge_base_indexed", documents=indexed)
+    finally:
+        db.close()
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "service": "rag-support-api"}
+    return {
+        "status": "healthy" if check_db() else "degraded",
+        "database": "up" if check_db() else "down",
+        "mock_llm": settings.use_mock_llm,
+    }
 
-@app.post("/ask", response_model=QueryResponse)
-def ask_question(request: QueryRequest):
-    start_time = time.time()
+
+@app.post("/ask", response_model=QueryResponse, dependencies=[Depends(verify_api_key)])
+def ask_question(request: QueryRequest, db: Session = Depends(get_db)):
+    start = time.time()
     try:
-        # Retrieve relevant context from the knowledge base
         context = rag_engine.retrieve_context(request.question)
-        
-        # Generate answer using retrieved context
         answer = rag_engine.generate_answer(request.question, context)
-        
-        # Validate grounding and safety
         grounding = validation_service.check_grounding(answer, context)
         safe = validation_service.check_safety(answer)
         verified = grounding and safe
-        confidence_score = int(grounding) * 70 + int(safe) * 30  # Example scoring
+        confidence_score = int(grounding) * 70 + int(safe) * 30
+        sources = [c[:120] + "..." if len(c) > 120 else c for c in context]
 
-        # Prepare sources (for now, source titles from context)
-        sources = [c[:40] + "..." if len(c) > 40 else c for c in context]
-
-        # Log interaction
-        db = SessionLocal()
-        log = InteractionLog(
-            query=request.question,
-            response=answer,
-            sources_used=', '.join(sources),
-            confidence_score=confidence_score
+        db.add(
+            InteractionLog(
+                query=request.question,
+                response=answer,
+                sources_used=" | ".join(sources),
+                confidence_score=confidence_score,
+            )
         )
-        db.add(log)
         db.commit()
-        db.close()
 
         logger.info(
-            "Answered user query",
-            question=request.question,
-            answer=answer,
+            "query_answered",
             verified=verified,
-            confidence_score=confidence_score,
-            duration=time.time() - start_time
+            confidence=confidence_score,
+            duration=round(time.time() - start, 3),
         )
-
         return QueryResponse(
             answer=answer,
             sources=sources,
             verified=verified,
-            confidence_score=confidence_score
+            confidence_score=confidence_score,
         )
-    except Exception as e:
-        logger.error("Failed to answer question", error=str(e))
-        raise HTTPException(status_code=500, detail="Internal server error")
+    except Exception as exc:
+        logger.exception("ask_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to process question") from exc
+
+
+@app.post("/admin/reindex", dependencies=[Depends(verify_api_key)])
+def reindex_knowledge_base():
+    count = rag_engine.index_markdown_folder()
+    return {"status": "ok", "documents_indexed": count}

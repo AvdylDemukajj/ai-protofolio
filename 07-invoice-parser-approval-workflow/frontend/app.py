@@ -3,7 +3,7 @@ import requests
 import os
 import pandas as pd
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8006")
 
 st.set_page_config(page_title="Invoice Approval Center", layout="wide")
 

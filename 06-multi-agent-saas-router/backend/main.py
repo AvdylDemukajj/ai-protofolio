@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from backend.graph.workflow import app as agent_graph
-from backend.database import SessionLocal, get_db
+from backend.database import SessionLocal
 from backend.models import Conversation
 import structlog
 

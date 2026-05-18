@@ -13,11 +13,13 @@ class ValidationService:
         except Exception:
             return False
 
-    def check_confidence(self, data: Dict[str, Any], threshold: float = 0.8) -> str:
-        """Determines status based on confidence score."""
-        confidence = float(data.get('confidence', 0))
-        if confidence >= threshold:
-            return "extracted" # Auto-approved for review queue
-        return "needs_review" # Requires manual check
+    def determine_status(self, data: Dict[str, Any], math_valid: bool, threshold: float = 0.8) -> str:
+        """Status from math validation and confidence."""
+        if not math_valid:
+            return "needs_review"
+        confidence = float(data.get("confidence", 0))
+        if confidence < threshold:
+            return "needs_review"
+        return "extracted"
 
 validation_service = ValidationService()
