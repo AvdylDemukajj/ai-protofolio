@@ -1,0 +1,304 @@
+{
+  "name": "01 Support Webhook Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "support-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "support-intake"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst provided = String(headers['x-webhook-secret'] || headers['X-Webhook-Secret'] || '').trim();\nconst expected = String($env.WEBHOOK_SECRET || '').trim();\nconst authorized = expected.length > 0 && provided === expected;\nconst body = $input.first().json.body ?? $input.first().json;\nreturn [{ json: { authorized, body } }];"
+      },
+      "id": "verify-secret",
+      "name": "Verify Webhook Secret",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.authorized }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-authorized",
+      "name": "Is Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Unauthorized', message: 'Invalid or missing X-Webhook-Secret header' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "respond-401",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst email = String(body.customer_email || '').trim();\nconst subject = String(body.subject || '').trim();\nconst text = String(body.body || '').trim();\nconst emailRe = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst valid = Boolean(email && subject && text && emailRe.test(email));\nconst crypto = require('crypto');\nconst input_hash = valid\n  ? crypto.createHash('sha256').update(`${email}|${subject}|${text}`).digest('hex')\n  : null;\nreturn [{\n  json: {\n    valid,\n    customer_email: email,\n    subject,\n    body: text,\n    external_id: body.external_id || null,\n    source: 'webhook',\n    input_hash\n  }\n}];"
+      },
+      "id": "validate-payload",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.valid }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-valid-payload",
+      "name": "Is Valid Payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Bad Request', message: 'customer_email, subject, and body are required' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-400",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO support_tickets (customer_email, subject, body, status, source, external_id) VALUES ($1, $2, $3, 'new', $4, $5) RETURNING id, customer_email, subject, body, source",
+        "options": {
+          "queryReplacement": "={{ $json.customer_email }},={{ $json.subject }},={{ $json.body }},={{ $json.source }},={{ $json.external_id }}"
+        }
+      },
+      "id": "insert-ticket",
+      "name": "Insert Ticket",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ticket = $input.first().json;\nconst payload = $('Validate Payload').first().json;\nreturn [{\n  json: {\n    ...ticket,\n    input_hash: payload.input_hash,\n    ai_prompt: `Classify this B2B support ticket. Return JSON only, no markdown.\\nEmail: ${ticket.customer_email}\\nSubject: ${ticket.subject}\\nBody: ${ticket.body}\\n\\nSchema:\\n{\\n  \"category\": \"billing\" | \"technical\" | \"sales\" | \"refund\" | \"other\",\\n  \"priority\": \"low\" | \"medium\" | \"high\",\\n  \"confidence\": 0.0,\\n  \"summary\": \"one sentence\",\\n  \"recommended_action\": \"escalate_human\" | \"auto_reply_template\" | \"monitor\",\\n  \"sentiment\": \"neutral\" | \"frustrated\" | \"urgent\"\\n}`\n  }\n}];"
+      },
+      "id": "build-ai-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "options": {
+          "systemMessage": "You are a B2B customer support classifier. Respond with valid JSON only."
+        }
+      },
+      "id": "ai-classifier",
+      "name": "AI Classifier",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1780, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ticket = $('Insert Ticket').first().json;\nconst payload = $('Validate Payload').first().json;\nconst aiRaw = $input.first().json.text || $input.first().json.output || '';\nlet parsed = {};\ntry {\n  const cleaned = String(aiRaw).replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    category: 'other',\n    priority: 'medium',\n    confidence: 0,\n    summary: 'AI response parse failed',\n    recommended_action: 'escalate_human',\n    sentiment: 'neutral'\n  };\n}\nconst keywords = ['refund', 'charged twice', 'down', 'outage', 'cancel immediately'];\nconst combined = `${ticket.subject} ${ticket.body}`.toLowerCase();\nlet priority = parsed.priority || 'medium';\nif (keywords.some((k) => combined.includes(k)) && priority !== 'high') {\n  priority = 'high';\n}\nconst confidence = Number(parsed.confidence) || 0;\nlet assigned_to = null;\nif (confidence < 0.6) {\n  assigned_to = 'ai_low_confidence';\n}\nconst notify_slack = priority === 'high' && confidence >= 0.6;\nreturn [{\n  json: {\n    ticket_id: ticket.id,\n    customer_email: ticket.customer_email,\n    subject: ticket.subject,\n    body: ticket.body,\n    input_hash: payload.input_hash,\n    category: parsed.category || 'other',\n    priority,\n    confidence_score: confidence,\n    ai_summary: parsed.summary || '',\n    assigned_to,\n    status: 'classified',\n    notify_slack,\n    ai_output: parsed,\n    model_version: 'gpt-4o-mini'\n  }\n}];"
+      },
+      "id": "apply-business-rules",
+      "name": "Apply Business Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE support_tickets SET category = $1, priority = $2, confidence_score = $3, ai_summary = $4, status = $5, assigned_to = $6, updated_at = NOW() WHERE id = $7 RETURNING id, customer_email, category, priority",
+        "options": {
+          "queryReplacement": "={{ $json.category }},={{ $json.priority }},={{ $json.confidence_score }},={{ $json.ai_summary }},={{ $json.status }},={{ $json.assigned_to }},={{ $json.ticket_id }}"
+        }
+      },
+      "id": "update-ticket",
+      "name": "Update Ticket",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2220, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (ticket_id, workflow_step, model_version, input_hash, output_json, execution_time_ms) VALUES ($1, 'classification', $2, $3, $4::jsonb, $5)",
+        "options": {
+          "queryReplacement": "={{ $('Apply Business Rules').first().json.ticket_id }},={{ $('Apply Business Rules').first().json.model_version }},={{ $('Apply Business Rules').first().json.input_hash }},={{ JSON.stringify($('Apply Business Rules').first().json.ai_output) }},=0"
+        }
+      },
+      "id": "insert-audit",
+      "name": "Insert Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2440, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $('Apply Business Rules').first().json.notify_slack }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-notify-slack",
+      "name": "Notify Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2660, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `🚨 HIGH priority support ticket\\nEmail: ${$('Apply Business Rules').first().json.customer_email}\\nCategory: ${$('Apply Business Rules').first().json.category} | Summary: ${$('Apply Business Rules').first().json.ai_summary}\\nTicket ID: ${$('Apply Business Rules').first().json.ticket_id}` }) }}",
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2880, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ticket_id: $('Apply Business Rules').first().json.ticket_id, priority: $('Apply Business Rules').first().json.priority, category: $('Apply Business Rules').first().json.category, status: 'classified' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-200",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [3100, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Verify Webhook Secret", "type": "main", "index": 0 }]]
+    },
+    "Verify Webhook Secret": {
+      "main": [[{ "node": "Is Authorized?", "type": "main", "index": 0 }]]
+    },
+    "Is Authorized?": {
+      "main": [
+        [{ "node": "Validate Payload", "type": "main", "index": 0 }],
+        [{ "node": "Respond 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Payload": {
+      "main": [[{ "node": "Is Valid Payload?", "type": "main", "index": 0 }]]
+    },
+    "Is Valid Payload?": {
+      "main": [
+        [{ "node": "Insert Ticket", "type": "main", "index": 0 }],
+        [{ "node": "Respond 400", "type": "main", "index": 0 }]
+      ]
+    },
+    "Insert Ticket": {
+      "main": [[{ "node": "Build AI Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build AI Prompt": {
+      "main": [[{ "node": "AI Classifier", "type": "main", "index": 0 }]]
+    },
+    "AI Classifier": {
+      "main": [[{ "node": "Apply Business Rules", "type": "main", "index": 0 }]]
+    },
+    "Apply Business Rules": {
+      "main": [[{ "node": "Update Ticket", "type": "main", "index": 0 }]]
+    },
+    "Update Ticket": {
+      "main": [[{ "node": "Insert Audit Log", "type": "main", "index": 0 }]]
+    },
+    "Insert Audit Log": {
+      "main": [[{ "node": "Notify Slack?", "type": "main", "index": 0 }]]
+    },
+    "Notify Slack?": {
+      "main": [
+        [{ "node": "Slack Notify", "type": "main", "index": 0 }],
+        [{ "node": "Respond 200", "type": "main", "index": 0 }]
+      ]
+    },
+    "Slack Notify": {
+      "main": [[{ "node": "Respond 200", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "versionId": "production-v1"
+}

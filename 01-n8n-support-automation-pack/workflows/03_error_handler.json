@@ -1,0 +1,82 @@
+{
+  "name": "03 Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first().json;\nconst message = err.execution?.error?.message || err.error?.message || 'Unknown workflow error';\nconst workflowName = err.workflow?.name || 'unknown';\nreturn [{\n  json: {\n    workflow_step: 'error',\n    model_version: null,\n    output_json: {\n      message,\n      workflow: workflowName,\n      timestamp: new Date().toISOString()\n    },\n    execution_time_ms: 0,\n    slack_text: `⚠️ n8n workflow error\\nWorkflow: ${workflowName}\\nMessage: ${message}`\n  }\n}];"
+      },
+      "id": "format-error",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (ticket_id, workflow_step, model_version, input_hash, output_json, execution_time_ms) VALUES (NULL, $1, $2, NULL, $3::jsonb, $4)",
+        "options": {
+          "queryReplacement": "={{ $json.workflow_step }},={{ $json.model_version }},={{ JSON.stringify($json.output_json) }},={{ $json.execution_time_ms }}"
+        }
+      },
+      "id": "log-error-audit",
+      "name": "Log Error Audit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.slack_text }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "slack-ops-alert",
+      "name": "Slack Ops Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [[{ "node": "Format Error", "type": "main", "index": 0 }]]
+    },
+    "Format Error": {
+      "main": [[{ "node": "Log Error Audit", "type": "main", "index": 0 }]]
+    },
+    "Log Error Audit": {
+      "main": [[{ "node": "Slack Ops Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "versionId": "production-v1-errors"
+}

@@ -1,0 +1,194 @@
+{
+  "name": "02 Demo CSV Batch",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = '/home/node/demo-data/support_emails.csv';\nconst fallback = [\n  { customer_email: 'user1@example.com', subject: 'Refund request', body: 'I paid twice for invoice #123', expected_category: 'refund' },\n  { customer_email: 'user2@example.com', subject: 'Login issue', body: 'Cannot access my account', expected_category: 'technical_issue' },\n  { customer_email: 'user3@example.com', subject: 'Pricing inquiry', body: 'Cost for 50 users?', expected_category: 'sales' },\n  { customer_email: 'user4@example.com', subject: 'Bug report', body: 'App crashes on startup', expected_category: 'technical_issue' },\n  { customer_email: 'user5@example.com', subject: 'Cancel subscription', body: 'Want to cancel immediately', expected_category: 'billing' }\n];\nlet rows = [];\ntry {\n  const raw = fs.readFileSync(path, 'utf8');\n  const lines = raw.trim().split(/\\r?\\n/);\n  for (let i = 1; i < lines.length; i++) {\n    const [customer_email, subject, body, expected_category] = lines[i].split(',');\n    if (!customer_email) continue;\n    rows.push({ customer_email, subject, body, expected_category, source: 'csv_demo' });\n  }\n} catch (e) {\n  rows = fallback;\n}\nconst crypto = require('crypto');\nreturn rows.map((row) => {\n  const input_hash = crypto.createHash('sha256').update(`${row.customer_email}|${row.subject}|${row.body}`).digest('hex');\n  return { json: { ...row, valid: true, input_hash } };\n});"
+      },
+      "id": "load-csv",
+      "name": "Load CSV Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO support_tickets (customer_email, subject, body, status, source) VALUES ($1, $2, $3, 'new', $4) RETURNING id, customer_email, subject, body, source",
+        "options": {
+          "queryReplacement": "={{ $json.customer_email }},={{ $json.subject }},={{ $json.body }},={{ $json.source }}"
+        }
+      },
+      "id": "insert-ticket",
+      "name": "Insert Ticket",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ticket = $input.first().json;\nconst src = $('Load CSV Rows').item.json;\nreturn [{\n  json: {\n    ...ticket,\n    input_hash: src.input_hash,\n    expected_category: src.expected_category,\n    ai_prompt: `Classify this B2B support ticket. Return JSON only, no markdown.\\nEmail: ${ticket.customer_email}\\nSubject: ${ticket.subject}\\nBody: ${ticket.body}\\n\\nSchema:\\n{\\n  \"category\": \"billing\" | \"technical\" | \"sales\" | \"refund\" | \"other\",\\n  \"priority\": \"low\" | \"medium\" | \"high\",\\n  \"confidence\": 0.0,\\n  \"summary\": \"one sentence\",\\n  \"recommended_action\": \"escalate_human\" | \"auto_reply_template\" | \"monitor\",\\n  \"sentiment\": \"neutral\" | \"frustrated\" | \"urgent\"\\n}`\n  }\n}];"
+      },
+      "id": "build-ai-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "options": {
+          "systemMessage": "You are a B2B customer support classifier. Respond with valid JSON only."
+        }
+      },
+      "id": "ai-classifier",
+      "name": "AI Classifier",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [1120, 400],
+      "credentials": {
+        "openAiApi": {
+          "id": "PLACEHOLDER",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ticket = $('Insert Ticket').item.json;\nconst src = $('Load CSV Rows').item.json;\nconst aiRaw = $input.first().json.text || $input.first().json.output || '';\nlet parsed = {};\ntry {\n  const cleaned = String(aiRaw).replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(cleaned);\n} catch (e) {\n  parsed = {\n    category: 'other',\n    priority: 'medium',\n    confidence: 0,\n    summary: 'AI response parse failed',\n    recommended_action: 'escalate_human',\n    sentiment: 'neutral'\n  };\n}\nconst keywords = ['refund', 'charged twice', 'down', 'outage', 'cancel immediately'];\nconst combined = `${ticket.subject} ${ticket.body}`.toLowerCase();\nlet priority = parsed.priority || 'medium';\nif (keywords.some((k) => combined.includes(k)) && priority !== 'high') {\n  priority = 'high';\n}\nconst confidence = Number(parsed.confidence) || 0;\nlet assigned_to = null;\nif (confidence < 0.6) {\n  assigned_to = 'ai_low_confidence';\n}\nreturn [{\n  json: {\n    ticket_id: ticket.id,\n    customer_email: ticket.customer_email,\n    input_hash: src.input_hash,\n    category: parsed.category || 'other',\n    priority,\n    confidence_score: confidence,\n    ai_summary: parsed.summary || '',\n    assigned_to,\n    status: 'classified',\n    notify_slack: priority === 'high' && confidence >= 0.6,\n    ai_output: parsed,\n    model_version: 'gpt-4o-mini',\n    expected_category: src.expected_category\n  }\n}];"
+      },
+      "id": "apply-business-rules",
+      "name": "Apply Business Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE support_tickets SET category = $1, priority = $2, confidence_score = $3, ai_summary = $4, status = $5, assigned_to = $6, updated_at = NOW() WHERE id = $7 RETURNING id, category, priority",
+        "options": {
+          "queryReplacement": "={{ $json.category }},={{ $json.priority }},={{ $json.confidence_score }},={{ $json.ai_summary }},={{ $json.status }},={{ $json.assigned_to }},={{ $json.ticket_id }}"
+        }
+      },
+      "id": "update-ticket",
+      "name": "Update Ticket",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_logs (ticket_id, workflow_step, model_version, input_hash, output_json, execution_time_ms) VALUES ($1, 'classification', $2, $3, $4::jsonb, $5)",
+        "options": {
+          "queryReplacement": "={{ $json.ticket_id }},={{ $json.model_version }},={{ $json.input_hash }},={{ JSON.stringify($json.ai_output) }},=0"
+        }
+      },
+      "id": "insert-audit",
+      "name": "Insert Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1780, 400],
+      "credentials": {
+        "postgres": {
+          "id": "PLACEHOLDER",
+          "name": "Postgres Support DB"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.notify_slack }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-notify-slack",
+      "name": "Notify Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2000, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `🚨 HIGH priority support ticket (CSV demo)\\nEmail: ${$json.customer_email}\\nCategory: ${$json.category} | Summary: ${$json.ai_summary}\\nTicket ID: ${$json.ticket_id}` }) }}",
+        "options": {}
+      },
+      "id": "slack-notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2220, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Load CSV Rows", "type": "main", "index": 0 }]]
+    },
+    "Load CSV Rows": {
+      "main": [[{ "node": "Insert Ticket", "type": "main", "index": 0 }]]
+    },
+    "Insert Ticket": {
+      "main": [[{ "node": "Build AI Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build AI Prompt": {
+      "main": [[{ "node": "AI Classifier", "type": "main", "index": 0 }]]
+    },
+    "AI Classifier": {
+      "main": [[{ "node": "Apply Business Rules", "type": "main", "index": 0 }]]
+    },
+    "Apply Business Rules": {
+      "main": [[{ "node": "Update Ticket", "type": "main", "index": 0 }]]
+    },
+    "Update Ticket": {
+      "main": [[{ "node": "Insert Audit Log", "type": "main", "index": 0 }]]
+    },
+    "Insert Audit Log": {
+      "main": [[{ "node": "Notify Slack?", "type": "main", "index": 0 }]]
+    },
+    "Notify Slack?": {
+      "main": [
+        [{ "node": "Slack Notify", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "versionId": "production-v1-demo"
+}
