@@ -1,0 +1,46 @@
+{
+  "name": "04 Demo CSV Batch",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\nconst path = '/home/node/demo-data/leads_batch_import.csv';\nconst fallback = [\n  { name: 'Elon Musk', email: 'elon@tesla.com', company: 'Tesla', company_size: 100000, message: 'Need AI for data processing.', source: 'csv_demo' },\n  { name: 'Bill Gates', email: 'bill@microsoft.com', company: 'Microsoft', company_size: 200000, message: 'Partnership for AI ethics.', source: 'csv_demo' },\n  { name: 'Random User', email: 'random@gmail.com', company: 'None', company_size: 0, message: 'Just saying hi.', source: 'csv_demo' }\n];\nlet rows = [];\ntry {\n  const raw = fs.readFileSync(path, 'utf8');\n  const lines = raw.trim().split(/\\r?\\n/);\n  for (let i = 1; i < lines.length; i++) {\n    const parts = lines[i].split(',');\n    if (parts.length < 5) continue;\n    rows.push({\n      name: parts[0].trim(),\n      email: parts[1].trim().toLowerCase(),\n      company: parts[2].trim(),\n      company_size: parseInt(parts[3], 10) || 0,\n      message: parts.slice(4).join(',').trim(),\n      source: 'csv_demo'\n    });\n  }\n} catch (e) {\n  rows = fallback;\n}\nreturn rows.map((r) => ({ json: r }));"
+      },
+      "id": "load-csv",
+      "name": "Load CSV Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (name, email, company, company_size, message, source, status) VALUES ($1, $2, $3, $4, $5, $6, 'new') ON CONFLICT (email) DO NOTHING RETURNING id, email, status",
+        "options": {
+          "queryReplacement": "={{ $json.name }},={{ $json.email }},={{ $json.company }},={{ $json.company_size }},={{ $json.message }},={{ $json.source }}"
+        }
+      },
+      "id": "insert-lead",
+      "name": "Insert Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Load CSV Rows", "type": "main", "index": 0 }]] },
+    "Load CSV Rows": { "main": [[{ "node": "Insert Lead", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "versionId": "production-v1-demo"
+}

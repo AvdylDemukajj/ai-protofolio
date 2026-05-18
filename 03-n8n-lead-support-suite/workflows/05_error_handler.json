@@ -1,0 +1,62 @@
+{
+  "name": "05 Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const err = $input.first().json;\nconst message = err.execution?.error?.message || err.error?.message || 'Unknown error';\nconst workflowName = err.workflow?.name || 'unknown';\nreturn [{\n  json: {\n    workflow_step: 'error',\n    output: { message, workflow: workflowName, at: new Date().toISOString() },\n    slack_text: `⚠️ Lead workflow error\\nWorkflow: ${workflowName}\\n${message}`\n  }\n}];"
+      },
+      "id": "format-error",
+      "name": "Format Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_audit_log (lead_id, workflow_step, model_version, input_hash, ai_output_json, execution_time_ms) VALUES (NULL, $1, NULL, NULL, $2::jsonb, 0)",
+        "options": {
+          "queryReplacement": "={{ $json.workflow_step }},={{ JSON.stringify($json.output) }}"
+        }
+      },
+      "id": "audit-error",
+      "name": "Audit Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.slack_text }) }}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "id": "slack-ops",
+      "name": "Slack Ops Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Error Trigger": { "main": [[{ "node": "Format Error", "type": "main", "index": 0 }]] },
+    "Format Error": { "main": [[{ "node": "Audit Error", "type": "main", "index": 0 }]] },
+    "Audit Error": { "main": [[{ "node": "Slack Ops Alert", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "versionId": "production-v1-errors"
+}

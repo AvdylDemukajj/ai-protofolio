@@ -1,0 +1,82 @@
+{
+  "name": "02 Lead Validation Schedule",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] }
+      },
+      "id": "schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, email, company, company_size, message, source, status FROM leads WHERE status = 'new' ORDER BY created_at ASC LIMIT 50",
+        "options": {}
+      },
+      "id": "fetch-new",
+      "name": "Fetch New Leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [460, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.item.json;\nconst emailRe = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst validEmail = emailRe.test(lead.email || '');\nconst validSize = (lead.company_size || 0) >= 10;\nconst spamHints = ['click here', 'claim your prize', 'winner@'];\nconst combined = `${lead.email} ${lead.message || ''}`.toLowerCase();\nconst isSpam = spamHints.some((h) => combined.includes(h));\nlet status = 'validated';\nlet review_reason = null;\nlet requires_human_review = false;\nif (!validEmail || !validSize || isSpam) {\n  status = 'rejected';\n  review_reason = isSpam ? 'Spam indicators detected' : 'Invalid email or company size below 10';\n}\nconst crypto = require('crypto');\nconst input_hash = crypto.createHash('sha256').update(`${lead.email}|${lead.name}|${lead.message || ''}`).digest('hex');\nreturn [{ json: { ...lead, status, review_reason, requires_human_review, input_hash } }];"
+      },
+      "id": "validate-rules",
+      "name": "Apply Validation Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET status = $1, review_reason = $2, requires_human_review = $3, updated_at = NOW() WHERE id = $4 RETURNING id, email, status",
+        "options": {
+          "queryReplacement": "={{ $json.status }},={{ $json.review_reason }},={{ $json.requires_human_review }},={{ $json.id }}"
+        }
+      },
+      "id": "update-lead",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [900, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_audit_log (lead_id, workflow_step, model_version, input_hash, ai_output_json, execution_time_ms) VALUES ($1, 'validation', 'rules-v1', $2, $3::jsonb, 0)",
+        "options": {
+          "queryReplacement": "={{ $json.id }},={{ $('Apply Validation Rules').item.json.input_hash }},={{ JSON.stringify({ status: $json.status, review_reason: $('Apply Validation Rules').item.json.review_reason }) }}"
+        }
+      },
+      "id": "audit-validation",
+      "name": "Audit Validation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1120, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Fetch New Leads", "type": "main", "index": 0 }]] },
+    "Fetch New Leads": { "main": [[{ "node": "Apply Validation Rules", "type": "main", "index": 0 }]] },
+    "Apply Validation Rules": { "main": [[{ "node": "Update Lead Status", "type": "main", "index": 0 }]] },
+    "Update Lead Status": { "main": [[{ "node": "Audit Validation", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "versionId": "production-v1"
+}

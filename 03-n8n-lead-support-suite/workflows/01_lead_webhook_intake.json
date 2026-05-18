@@ -1,0 +1,154 @@
+{
+  "name": "01 Lead Webhook Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "lead-intake"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst provided = String(headers['x-webhook-secret'] || headers['X-Webhook-Secret'] || '').trim();\nconst expected = String($env.WEBHOOK_SECRET || '').trim();\nconst authorized = expected.length > 0 && provided === expected;\nconst body = $input.first().json.body ?? $input.first().json;\nreturn [{ json: { authorized, body } }];"
+      },
+      "id": "verify-secret",
+      "name": "Verify Webhook Secret",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.authorized }}", "value2": true }]
+        }
+      },
+      "id": "if-authorized",
+      "name": "Is Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Unauthorized' }) }}",
+        "options": { "responseCode": 401 }
+      },
+      "id": "respond-401",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst name = String(body.name || '').trim();\nconst email = String(body.email || '').trim().toLowerCase();\nconst company = String(body.company || '').trim();\nconst company_size = parseInt(body.company_size, 10) || 0;\nconst message = String(body.message || '').trim();\nconst source = String(body.source || 'webhook').trim();\nconst external_id = body.external_id || null;\nconst emailRe = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;\nconst valid = name && email && emailRe.test(email) && company_size >= 0;\nconst crypto = require('crypto');\nconst input_hash = valid ? crypto.createHash('sha256').update(`${email}|${name}|${message}`).digest('hex') : null;\nreturn [{ json: { valid, name, email, company, company_size, message, source, external_id, input_hash } }];"
+      },
+      "id": "validate-payload",
+      "name": "Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $json.valid }}", "value2": true }]
+        }
+      },
+      "id": "if-valid",
+      "name": "Is Valid Payload?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: 'Bad Request', message: 'name, email, and company_size are required' }) }}",
+        "options": { "responseCode": 400 }
+      },
+      "id": "respond-400",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 260]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO leads (name, email, company, company_size, message, source, external_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'new') ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, company = EXCLUDED.company, company_size = EXCLUDED.company_size, message = EXCLUDED.message, source = EXCLUDED.source, external_id = EXCLUDED.external_id, updated_at = NOW() RETURNING id, name, email, status",
+        "options": {
+          "queryReplacement": "={{ $json.name }},={{ $json.email }},={{ $json.company }},={{ $json.company_size }},={{ $json.message }},={{ $json.source }},={{ $json.external_id }}"
+        }
+      },
+      "id": "upsert-lead",
+      "name": "Upsert Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_audit_log (lead_id, workflow_step, model_version, input_hash, ai_output_json, execution_time_ms) VALUES ($1, 'intake', 'webhook-v1', $2, $3::jsonb, 0)",
+        "options": {
+          "queryReplacement": "={{ $json.id }},={{ $('Validate Payload').first().json.input_hash }},={{ JSON.stringify({ source: $('Validate Payload').first().json.source }) }}"
+        }
+      },
+      "id": "audit-intake",
+      "name": "Audit Intake",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ lead_id: $('Upsert Lead').first().json.id, email: $('Upsert Lead').first().json.email, status: $('Upsert Lead').first().json.status }) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond-200",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Verify Webhook Secret", "type": "main", "index": 0 }]] },
+    "Verify Webhook Secret": { "main": [[{ "node": "Is Authorized?", "type": "main", "index": 0 }]] },
+    "Is Authorized?": {
+      "main": [
+        [{ "node": "Validate Payload", "type": "main", "index": 0 }],
+        [{ "node": "Respond 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate Payload": { "main": [[{ "node": "Is Valid Payload?", "type": "main", "index": 0 }]] },
+    "Is Valid Payload?": {
+      "main": [
+        [{ "node": "Upsert Lead", "type": "main", "index": 0 }],
+        [{ "node": "Respond 400", "type": "main", "index": 0 }]
+      ]
+    },
+    "Upsert Lead": { "main": [[{ "node": "Audit Intake", "type": "main", "index": 0 }]] },
+    "Audit Intake": { "main": [[{ "node": "Respond 200", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "versionId": "production-v1"
+}

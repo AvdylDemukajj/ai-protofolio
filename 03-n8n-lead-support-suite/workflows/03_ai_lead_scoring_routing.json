@@ -1,0 +1,142 @@
+{
+  "name": "03 AI Lead Scoring & Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "minutes", "minutesInterval": 15 }] }
+      },
+      "id": "schedule",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, email, company, company_size, message, source FROM leads WHERE status = 'validated' ORDER BY created_at ASC LIMIT 25",
+        "options": {}
+      },
+      "id": "fetch-validated",
+      "name": "Fetch Validated Leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [460, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.item.json;\nconst crypto = require('crypto');\nconst input_hash = crypto.createHash('sha256').update(`${lead.email}|${lead.name}|${lead.message || ''}`).digest('hex');\nreturn [{\n  json: {\n    ...lead,\n    input_hash,\n    ai_prompt: `Analyze this B2B SaaS lead. Return JSON only.\\nName: ${lead.name}\\nEmail: ${lead.email}\\nCompany: ${lead.company} (size: ${lead.company_size})\\nMessage: ${lead.message || 'N/A'}\\n\\nSchema:\\n{\\n  \"lead_score\": 0-100,\\n  \"intent_category\": \"high_buying\" | \"medium_interest\" | \"low_info\" | \"spam\",\\n  \"summary\": \"one sentence\",\\n  \"recommended_action\": \"Call immediately\" | \"Send email\" | \"Nurture\",\\n  \"confidence\": 0.0-1.0\\n}`\n  }\n}];"
+      },
+      "id": "build-prompt",
+      "name": "Build AI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.ai_prompt }}",
+        "options": {
+          "systemMessage": "You are a strict B2B sales director. Output valid JSON only."
+        }
+      },
+      "id": "ai-scorer",
+      "name": "AI Lead Scorer",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "credentials": {
+        "openAiApi": { "id": "PLACEHOLDER", "name": "OpenAI Account" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $('Fetch Validated Leads').item.json;\nconst input_hash = $('Build AI Prompt').item.json.input_hash;\nconst aiRaw = $input.first().json.text || $input.first().json.output || '';\nlet parsed = {};\ntry {\n  parsed = JSON.parse(String(aiRaw).replace(/```json|```/g, '').trim());\n} catch (e) {\n  parsed = { lead_score: 50, intent_category: 'low_info', summary: 'AI parse failed', recommended_action: 'Nurture', confidence: 0 };\n}\nlet lead_score = Math.min(100, Math.max(0, parseInt(parsed.lead_score, 10) || 0));\nconst confidence = Number(parsed.confidence) || 0;\nconst intent_category = parsed.intent_category || 'low_info';\nlet requires_human_review = confidence < 0.6;\nif (intent_category === 'spam') {\n  lead_score = Math.min(lead_score, 20);\n  requires_human_review = true;\n}\nconst notify_slack = lead_score >= 80 && confidence >= 0.6 && intent_category !== 'spam';\nreturn [{\n  json: {\n    lead_id: lead.id,\n    name: lead.name,\n    email: lead.email,\n    lead_score,\n    intent_category,\n    summary: parsed.summary || '',\n    recommended_action: parsed.recommended_action || 'Nurture',\n    requires_human_review,\n    notify_slack,\n    input_hash,\n    ai_output: parsed,\n    model_version: 'gpt-4o-mini',\n    status: 'qualified'\n  }\n}];"
+      },
+      "id": "apply-rules",
+      "name": "Apply Scoring Rules",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leads SET lead_score = $1, intent_category = $2, summary = $3, recommended_action = $4, status = $5, requires_human_review = $6, updated_at = NOW() WHERE id = $7 RETURNING id, name, email, lead_score",
+        "options": {
+          "queryReplacement": "={{ $json.lead_score }},={{ $json.intent_category }},={{ $json.summary }},={{ $json.recommended_action }},={{ $json.status }},={{ $json.requires_human_review }},={{ $json.lead_id }}"
+        }
+      },
+      "id": "update-lead",
+      "name": "Update Lead",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1340, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lead_audit_log (lead_id, workflow_step, model_version, input_hash, ai_output_json, execution_time_ms) VALUES ($1, 'scoring', $2, $3, $4::jsonb, 0)",
+        "options": {
+          "queryReplacement": "={{ $json.lead_id }},={{ $('Apply Scoring Rules').item.json.model_version }},={{ $('Apply Scoring Rules').item.json.input_hash }},={{ JSON.stringify($('Apply Scoring Rules').item.json.ai_output) }}"
+        }
+      },
+      "id": "audit-scoring",
+      "name": "Audit Scoring",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1560, 400],
+      "credentials": {
+        "postgres": { "id": "PLACEHOLDER", "name": "Postgres Lead DB" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [{ "value1": "={{ $('Apply Scoring Rules').item.json.notify_slack }}", "value2": true }]
+        }
+      },
+      "id": "if-hot",
+      "name": "Notify Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: `🔥 HOT LEAD ALERT\\nName: ${$('Apply Scoring Rules').item.json.name}\\nEmail: ${$('Apply Scoring Rules').item.json.email}\\nScore: ${$('Apply Scoring Rules').item.json.lead_score}\\nAction: ${$('Apply Scoring Rules').item.json.recommended_action}\\nSummary: ${$('Apply Scoring Rules').item.json.summary}` }) }}",
+        "options": {}
+      },
+      "id": "slack",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": { "main": [[{ "node": "Fetch Validated Leads", "type": "main", "index": 0 }]] },
+    "Fetch Validated Leads": { "main": [[{ "node": "Build AI Prompt", "type": "main", "index": 0 }]] },
+    "Build AI Prompt": { "main": [[{ "node": "AI Lead Scorer", "type": "main", "index": 0 }]] },
+    "AI Lead Scorer": { "main": [[{ "node": "Apply Scoring Rules", "type": "main", "index": 0 }]] },
+    "Apply Scoring Rules": { "main": [[{ "node": "Update Lead", "type": "main", "index": 0 }]] },
+    "Update Lead": { "main": [[{ "node": "Audit Scoring", "type": "main", "index": 0 }]] },
+    "Audit Scoring": { "main": [[{ "node": "Notify Slack?", "type": "main", "index": 0 }]] },
+    "Notify Slack?": {
+      "main": [[{ "node": "Slack Notify", "type": "main", "index": 0 }], []]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "versionId": "production-v1"
+}
