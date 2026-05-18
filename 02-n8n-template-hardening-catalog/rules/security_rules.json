@@ -1,26 +1,108 @@
 {
-  "version": "1.0",
+  "version": "2.0",
+  "fail_on_severity": "HIGH",
   "rules": {
     "hardcoded_credentials": {
       "enabled": true,
       "severity": "CRITICAL",
-      "patterns": ["password", "api_key", "secret", "token"],
-      "description": "Detects plain-text secrets in workflow parameters."
+      "description": "Detects plaintext secrets and known token patterns in node parameters."
+    },
+    "hardcoded_slack_webhook": {
+      "enabled": true,
+      "severity": "CRITICAL",
+      "description": "Detects Slack incoming webhook URLs embedded in workflow parameters."
+    },
+    "missing_credential_binding": {
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Integration nodes must reference n8n Credentials instead of inline secrets."
+    },
+    "placeholder_credentials": {
+      "enabled": true,
+      "severity": "INFO",
+      "description": "Reminds operators to bind PLACEHOLDER credential IDs after import."
     },
     "public_webhooks": {
       "enabled": true,
       "severity": "HIGH",
-      "description": "Warns if webhooks are public without authentication headers."
+      "description": "Webhook triggers must have authentication validation within the workflow graph."
     },
     "missing_error_handling": {
       "enabled": true,
       "severity": "MEDIUM",
-      "description": "Checks if critical nodes have error triggers connected."
+      "description": "Production workflows should define an error workflow or include an Error Trigger."
     },
     "insecure_http": {
       "enabled": true,
       "severity": "HIGH",
-      "description": "Flags HTTP calls to non-HTTPS endpoints."
+      "description": "External HTTP endpoints must use HTTPS."
+    },
+    "dangerous_code_execution": {
+      "enabled": true,
+      "severity": "CRITICAL",
+      "description": "Flags risky patterns in Code nodes (eval, child_process, etc.)."
+    },
+    "shell_execution_nodes": {
+      "enabled": true,
+      "severity": "CRITICAL",
+      "description": "Execute Command nodes are blocked in production templates."
+    },
+    "execution_settings": {
+      "enabled": true,
+      "severity": "LOW",
+      "description": "Recommends explicit executionOrder in workflow settings."
     }
-  }
+  },
+  "secret_patterns": [
+    {
+      "id": "openai_key",
+      "pattern": "sk-[a-zA-Z0-9]{20,}",
+      "label": "OpenAI API key"
+    },
+    {
+      "id": "slack_token",
+      "pattern": "xox[baprs]-[0-9a-zA-Z-]+",
+      "label": "Slack token"
+    },
+    {
+      "id": "aws_access_key",
+      "pattern": "AKIA[0-9A-Z]{16}",
+      "label": "AWS access key"
+    },
+    {
+      "id": "generic_api_key",
+      "pattern": "(?i)(api[_-]?key|secret[_-]?key|access[_-]?token)\\s*[:=]\\s*[\"'][^\"']{8,}[\"']",
+      "label": "Generic API key assignment"
+    },
+    {
+      "id": "generic_password",
+      "pattern": "(?i)(password|passwd|pwd)\\s*[:=]\\s*[\"'][^\"']{4,}[\"']",
+      "label": "Hardcoded password"
+    },
+    {
+      "id": "bearer_token",
+      "pattern": "Bearer\\s+[a-zA-Z0-9._-]{20,}",
+      "label": "Bearer token"
+    }
+  ],
+  "credential_node_types": [
+    "n8n-nodes-base.postgres",
+    "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+    "n8n-nodes-base.openAi",
+    "n8n-nodes-base.httpRequest"
+  ],
+  "webhook_auth_markers": [
+    "x-webhook-secret",
+    "webhook_secret",
+    "authorized",
+    "hmac",
+    "signature",
+    "verify webhook"
+  ],
+  "allowed_http_hosts": [
+    "localhost",
+    "127.0.0.1",
+    "n8n",
+    "db"
+  ]
 }

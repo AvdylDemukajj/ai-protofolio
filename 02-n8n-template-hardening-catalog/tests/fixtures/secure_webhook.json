@@ -1,0 +1,34 @@
+{
+  "name": "Secure Webhook Fixture",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "secure-intake",
+        "responseMode": "responseNode"
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $input.first().json.headers || {};\nconst provided = headers['x-webhook-secret'] || '';\nconst expected = $env.WEBHOOK_SECRET || '';\nconst authorized = expected && provided === expected;\nreturn [{ json: { authorized } }];"
+      },
+      "name": "Verify Webhook Secret",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Verify Webhook Secret", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "error-handler-id"
+  }
+}

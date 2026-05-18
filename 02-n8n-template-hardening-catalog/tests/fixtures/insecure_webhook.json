@@ -1,0 +1,31 @@
+{
+  "name": "Insecure Webhook Fixture",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "public-intake",
+        "responseMode": "lastNode"
+      },
+      "name": "Public Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: $input.first().json }];"
+      },
+      "name": "Process Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 300]
+    }
+  ],
+  "connections": {
+    "Public Webhook": {
+      "main": [[{ "node": "Process Body", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {}
+}
