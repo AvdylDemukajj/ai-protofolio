@@ -1,66 +1,62 @@
 version: '3.9'
 
 services:
-  master-db:
+  db:
     image: postgres:15-alpine
     container_name: saas-master-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: saas_admin
-      POSTGRES_PASSWORD: SecureRootPass123!
-      POSTGRES_DB: master_db
+      - POSTGRES_USER=saas_admin
+      - POSTGRES_PASSWORD=SecureRootPass123!
+      - POSTGRES_DB=master_db
     volumes:
-      - pg_/var/lib/postgresql/data
-      - ./infrastructure/init_master.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres_/var/lib/postgresql/data
+      - ./infrastructure/init_tenant.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
-    networks:
-      - saas-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U saas_admin -d master_db"]
+      test: ["CMD-SHELL", "pg_isready -U saas_admin"]
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - saas-network
 
   redis:
     image: redis:7-alpine
     container_name: saas-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_/data
     networks:
-      - saas-net
+      - saas-network
 
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile
     container_name: saas-api
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      MASTER_DB_URL: postgresql://saas_admin:SecureRootPass123!@master-db:5432/master_db
-      REDIS_HOST: redis
-      JWT_SECRET: change_this_in_production_to_a_secure_random_string
+      - MASTER_DB_URL=postgresql://saas_admin:SecureRootPass123!@db:5432/master_db
+      - REDIS_HOST=redis
+      - JWT_SECRET=super_secret_jwt_key_change_in_prod_32chars!
+      - ENVIRONMENT=production
     depends_on:
-      master-db:
+      db:
         condition: service_healthy
+      redis:
+        condition: service_started
     networks:
-      - saas-net
-    restart: unless-stopped
-
-  billing-worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.billing
-    environment:
-      MASTER_DB_URL: postgresql://saas_admin:SecureRootPass123!@master-db:5432/master_db
-    depends_on:
-      - master-db
-    networks:
-      - saas-net
-    # Run once for demo purposes, in prod would be a cron
-    command: python -m billing_engine.invoice_generator
+      - saas-network
 
 volumes:
-  pg_data: {}
+  postgres_
+  redis_
 
 networks:
-  saas-net:
+  saas-network:
     driver: bridge
